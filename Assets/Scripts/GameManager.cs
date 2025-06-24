@@ -7,21 +7,23 @@ public class GameManager : MonoBehaviour
 {
     public TileBoard board;                         // Reference to the tile board
     public CanvasGroup gameOver;                    // UI overlay shown when the game ends
-    public CanvasGroup mainMenu;
+    public CanvasGroup mainMenu;// UI overlay for the main menu
+    public CanvasGroup optionsMenu;
     public CanvasGroup pauseMenu;        // UI overlay for pause menu
-    //public GameObject resumeButton;                      // UI overlay for the main menu
+                                         //public GameObject resumeButton;  
+    public GameObject optionButton;
     public GameObject restartButton;                // Button to restart the game
-    public GameObject pressSpaceKeyText;              // UI text prompting the player to start
-
+    public GameObject pressEnterKeyText;              // UI text prompting the player to start
     public TextMeshProUGUI scoreText;               // Current score display
     public TextMeshProUGUI hiscoreText;             // High score display
     public TextMeshProUGUI nextTileText;            // Shows the number of the next tile to be spawned
 
     private int score;                              // Internal score counter
-    //private bool waitingForEnterKey = false;          // Controls transition from main menu to game
+    private bool waitingForAnyKey = false;          // Controls transition from main menu to game
     private int nextTileNumber;                     // Holds the number for the next tile
     private int sameNextTileStreak = 0;
     private bool isPaused = false;
+    private bool isInOptions = false;
     void Start()
     {
         ShowMainMenu();     // Initialize to main menu
@@ -31,28 +33,49 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
+        if (isInOptions)
+        {
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                ResumeGame(); // Resume game
+            }
+            return; // Block all other input
+        }
+
+        // 2. If game is paused, allow only ESC to resume
         if (isPaused)
         {
             if (Input.GetKeyDown(KeyCode.Escape))
-                ResumeGame();
+            {
+                ResumeGame(); // Resume game
+            }
             return; // Block all other input
         }
-        // Listen for enter key press to begin the game
-        if (Input.GetKeyDown(KeyCode.Space))
+
+        // 3. Start game from main menu using Enter key
+        if (waitingForAnyKey && Input.anyKeyDown && !Input.GetKeyDown(KeyCode.Escape))
         {
-            //waitingForEnterKey = false;
-            pressSpaceKeyText.SetActive(false);
-            OnStartGamePressed(); // Start the actual game
+            waitingForAnyKey = false;
+            pressEnterKeyText.SetActive(false);
+            OnStartGamePressed(); // Start the game
+            return;
         }
-        if (Input.GetKeyDown(KeyCode.Escape) && board.enabled)
+
+        // 4. Pause the game while playing (board enabled)
+        if (board.enabled && Input.GetKeyDown(KeyCode.Escape))
         {
             PauseGame();
         }
     }
 
+
     // Display the main menu and reset game state
     public void ShowMainMenu()
     {
+        isInOptions = false;
+        Time.timeScale = 1f;
+        HideOptionsMenu();  // Hide pause UI just in case
+
         mainMenu.alpha = 1f;
         mainMenu.interactable = true;
         mainMenu.blocksRaycasts = true;
@@ -65,12 +88,37 @@ public class GameManager : MonoBehaviour
         restartButton.SetActive(false);
         board.allowInput = false;
 
-        pressSpaceKeyText.SetActive(true);
-        //waitingForEnterKey = true;
+        pressEnterKeyText.SetActive(true);
+        waitingForAnyKey = true;
         
         isPaused = false;
         Time.timeScale = 1f;
         HidePauseMenu();  // Hide pause UI just in case
+    }
+    public void ShowOptionsMenu()
+    {
+        isInOptions = true;
+        Time.timeScale = 0f;
+        restartButton.SetActive(false);
+        board.allowInput = false;
+        optionsMenu.alpha = 1f;
+        optionsMenu.interactable = true;
+        optionsMenu.blocksRaycasts = true;
+
+        isPaused = false;
+        HidePauseMenu();  // Hide pause UI just in case
+        
+    }
+    public void HideOptionsMenu()
+    {
+
+        // Hide Options Menu
+        isInOptions = false;
+        optionsMenu.alpha = 0f;
+        optionsMenu.interactable = false;
+        optionsMenu.blocksRaycasts = false;
+
+
     }
 
     // Called when "press any key" is detected or Start button is clicked
@@ -100,6 +148,7 @@ public class GameManager : MonoBehaviour
 
         board.enabled = true;          // Enable board input
         restartButton.SetActive(true); // Show restart button
+        optionButton.SetActive(true);
 
         PrepareNextTile(); // Set up the first tile to be dropped
     }
@@ -145,6 +194,7 @@ public class GameManager : MonoBehaviour
         isPaused = true;
         Time.timeScale = 0f;
         restartButton.SetActive(false);
+        optionButton.SetActive(false);
         board.allowInput = false;
         pauseMenu.alpha = 1f;
         pauseMenu.interactable = true;
@@ -162,8 +212,10 @@ public class GameManager : MonoBehaviour
         isPaused = false;
         Time.timeScale = 1f;
         restartButton.SetActive(true);
+        optionButton.SetActive(true);
         board.allowInput = true;
         HidePauseMenu();
+        HideOptionsMenu();
         
     }
 

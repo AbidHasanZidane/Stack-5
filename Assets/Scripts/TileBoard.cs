@@ -36,7 +36,7 @@ public class TileBoard : MonoBehaviour
         tiles.Clear();
         
     }
-    // public void CreateTile()
+    // public void OriginalCreateTile()
     //     {
     //          Tile tile = Instantiate(tilePrefab, grid.transform);
 
@@ -50,28 +50,80 @@ public class TileBoard : MonoBehaviour
     //         gameManager.PrepareNextTile();
     //     }
 
+    public void CreateTileWithST()
+    {
+        Tile tile = Instantiate(tilePrefab, grid.transform);
+
+        int roll = Random.Range(0, 100);
+        if (roll == 22)
+        {
+            tile.SetState(tileStates[tileStates.Length - 2], 2222, true);
+            tile.Spawn(grid.GetRandomEmptyCell());
+            tiles.Add(tile);
+            TriggerPrimeTileEffect(2, tile);
+            return;
+        }
+        else if (roll == 33)
+        {
+            tile.SetState(tileStates[tileStates.Length - 1], 3333, true);
+            tile.Spawn(grid.GetRandomEmptyCell());
+            tiles.Add(tile);
+            TriggerPrimeTileEffect(3, tile);
+            return;
+        }
+
+        int number;
+
+        if (forceNextTile)
+        {
+            // Force a different number
+            number = (lastSpawnedNumber == 2) ? 3 : 2;
+            forceNextTile = false;
+            sameTileStreak = 0;
+            lastSpawnedNumber = number;
+        }
+        else
+        {
+            number = gameManager.GetNextTileNumber();
+
+            if (number == lastSpawnedNumber)
+            {
+                sameTileStreak++;
+                if (sameTileStreak >= 3)
+                {
+                    forceNextTile = true;
+                    sameTileStreak = 0; // Reset to avoid double trigger
+                }
+            }
+            else
+            {
+                lastSpawnedNumber = number;
+                sameTileStreak = 1;
+            }
+        }
+
+        try
+        {
+            int index = IndexOf(number);
+            if (index < 0 || index >= tileStates.Length)
+                throw new System.Exception($"Invalid index {index} for number {number}");
+
+            tile.SetState(tileStates[index], number);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError("Failed to set tile state: " + ex.Message);
+        }
+
+        tile.Spawn(grid.GetRandomEmptyCell());
+        tiles.Add(tile);
+        gameManager.PrepareNextTile(); // Set and show the next tile for player
+    }
+
 
     public void CreateTile()
     {
         Tile tile = Instantiate(tilePrefab, grid.transform);
-
-        // int roll = Random.Range(0, 100);
-        // if (roll == 22)
-        // {
-        //     tile.SetState(tileStates[tileStates.Length - 2], 2222, true);
-        //     tile.Spawn(grid.GetRandomEmptyCell());
-        //     tiles.Add(tile);
-        //     TriggerPrimeTileEffect(2, tile);
-        //     return;
-        // }
-        // else if (roll == 33)
-        // {
-        //     tile.SetState(tileStates[tileStates.Length - 1], 3333, true);
-        //     tile.Spawn(grid.GetRandomEmptyCell());
-        //     tiles.Add(tile);
-        //     TriggerPrimeTileEffect(3, tile);
-        //     return;
-        // }
 
         int number;
 
