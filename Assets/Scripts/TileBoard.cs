@@ -50,6 +50,18 @@ public class TileBoard : MonoBehaviour
     //         gameManager.PrepareNextTile();
     //     }
 
+    public void CreateTile()
+    {
+        if (gameManager.SpecialTileMode)
+        {
+            CreateTileWithST();  // with 2222 / 3333 and anti-streak logic
+        }
+        else
+        {
+            CreateTileClassic();  // just basic 2 or 3
+        }
+    }
+
     public void CreateTileWithST()
     {
         Tile tile = Instantiate(tilePrefab, grid.transform);
@@ -121,7 +133,7 @@ public class TileBoard : MonoBehaviour
     }
 
 
-    public void CreateTile()
+    public void CreateTileClassic()
     {
         Tile tile = Instantiate(tilePrefab, grid.transform);
 

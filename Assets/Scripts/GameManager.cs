@@ -1,34 +1,57 @@
 using System.Collections;
 using UnityEngine;
 using TMPro;
+using System.Text;
 
 // Manages overall game flow, UI states, scoring, and game lifecycle
 public class GameManager : MonoBehaviour
 {
     public TileBoard board;                         // Reference to the tile board
-    public CanvasGroup gameOver;                    // UI overlay shown when the game ends
+    public CanvasGroup gameOverScene;                    // UI overlay shown when the game ends
     public CanvasGroup mainMenu;// UI overlay for the main menu
     public CanvasGroup optionsMenu;
     public CanvasGroup pauseMenu;        // UI overlay for pause menu
                                          //public GameObject resumeButton;  
+    public CanvasGroup helpMenu;
     public GameObject optionButton;
     public GameObject restartButton;                // Button to restart the game
     public GameObject pressEnterKeyText;              // UI text prompting the player to start
+    public GameObject soundToggleButton;
+    public GameObject scoreBox;
+    public GameObject bestScoreBox;
+    public GameObject nextTileBox;
+    public GameObject helpButton;
     public TextMeshProUGUI scoreText;               // Current score display
     public TextMeshProUGUI hiscoreText;             // High score display
     public TextMeshProUGUI nextTileText;            // Shows the number of the next tile to be spawned
 
+    public TextMeshProUGUI soundToggleText;
+    
+    public TextMeshProUGUI gameModeButtonText;
+    public TextMeshProUGUI helpText;
+    public CanvasGroup scoreboardScene;
+    public TextMeshProUGUI scoreboardText;
+    public DatabaseManager databaseManager;
+
+    public bool SpecialTileMode = false;
     private int score;                              // Internal score counter
     private bool waitingForAnyKey = false;          // Controls transition from main menu to game
     private int nextTileNumber;                     // Holds the number for the next tile
     private int sameNextTileStreak = 0;
     private bool isPaused = false;
     private bool isInOptions = false;
+    private bool isSoundOn = true;
+    private bool isInHelp = false;
+
     void Start()
     {
         ShowMainMenu();     // Initialize to main menu
+        LoadGameMode();
         PrepareNextTile();  // Preload the first next tile
         HidePauseMenu();
+        
+        soundToggleText.text = isSoundOn ? "Sound On" : "Sound Off";
+        gameModeButtonText.text = SpecialTileMode ? "Mode: Special" : "Mode: Classic";
     }
 
     void Update()
@@ -38,6 +61,14 @@ public class GameManager : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 ResumeGame(); // Resume game
+            }
+            return; // Block all other input
+        }
+        if (isInHelp)
+        {
+            if (isInHelp && Input.GetKeyDown(KeyCode.Escape))
+            {
+                ToggleHelpPanel();
             }
             return; // Block all other input
         }
@@ -80,9 +111,9 @@ public class GameManager : MonoBehaviour
         mainMenu.interactable = true;
         mainMenu.blocksRaycasts = true;
 
-        gameOver.alpha = 0f;
-        gameOver.interactable = false;
-        gameOver.blocksRaycasts = false;
+        gameOverScene.alpha = 0f;
+        gameOverScene.interactable = false;
+        gameOverScene.blocksRaycasts = false;
 
         board.enabled = false; // Disable input while on main menu
         restartButton.SetActive(false);
@@ -94,12 +125,19 @@ public class GameManager : MonoBehaviour
         isPaused = false;
         Time.timeScale = 1f;
         HidePauseMenu();  // Hide pause UI just in case
+        isInHelp = false;
     }
     public void ShowOptionsMenu()
     {
         isInOptions = true;
         Time.timeScale = 0f;
         restartButton.SetActive(false);
+        optionButton.SetActive(false);
+        scoreBox.SetActive(false);
+        bestScoreBox.SetActive(false);
+        nextTileBox.SetActive(false);
+        helpButton.SetActive(false);
+
         board.allowInput = false;
         optionsMenu.alpha = 1f;
         optionsMenu.interactable = true;
@@ -138,8 +176,8 @@ public class GameManager : MonoBehaviour
         hiscoreText.text = LoadHiscore().ToString();
 
         // Hide game over screen
-        gameOver.alpha = 0f;
-        gameOver.interactable = false;
+        gameOverScene.alpha = 0f;
+        gameOverScene.interactable = false;
 
         board.ClearBoard();
         board.CreateSpecificTile(2);
@@ -189,19 +227,33 @@ public class GameManager : MonoBehaviour
     {
         return PlayerPrefs.GetInt("hiscore", 0);
     }
+
+    public void HideHelpMenu()
+    {
+        helpMenu.alpha = 0f;
+        helpMenu.interactable = false;
+        helpMenu.blocksRaycasts = false;
+    }
     public void PauseGame()
     {
         isPaused = true;
         Time.timeScale = 0f;
+
         restartButton.SetActive(false);
         optionButton.SetActive(false);
+        scoreBox.SetActive(false);
+        bestScoreBox.SetActive(false);
+        nextTileBox.SetActive(false);
+        helpButton.SetActive(false);
         board.allowInput = false;
+
         pauseMenu.alpha = 1f;
         pauseMenu.interactable = true;
         pauseMenu.blocksRaycasts = true;
     }
     private void HidePauseMenu()
     {
+        
         pauseMenu.alpha = 0f;
         pauseMenu.interactable = false;
         pauseMenu.blocksRaycasts = false;
@@ -210,24 +262,99 @@ public class GameManager : MonoBehaviour
     public void ResumeGame()
     {
         isPaused = false;
+        isInHelp = false;
         Time.timeScale = 1f;
+
         restartButton.SetActive(true);
         optionButton.SetActive(true);
+        scoreBox.SetActive(true);
+        bestScoreBox.SetActive(true);
+        nextTileBox.SetActive(true);
+        helpButton.SetActive(true);
         board.allowInput = true;
+
         HidePauseMenu();
         HideOptionsMenu();
+        HideHelpMenu();
         
     }
 
-    // Trigger game over sequence
-    public void GameOver()
+    public void ShowScoreboard()
+    {
+        scoreboardScene.alpha = 1f;
+        scoreboardScene.interactable = true;
+        scoreboardScene.blocksRaycasts = true;
+
+        var scores = databaseManager.GetTopScores();
+        StringBuilder sb = new StringBuilder("Top Scores:\n");
+
+        int rank = 1;
+        foreach (var score in scores)
+        {
+            sb.AppendLine($"{rank}. {score}");
+            rank++;
+        }
+
+        scoreboardText.text = sb.ToString(); // Make sure you set this to a UI Text/TMP field
+    }
+
+
+    public void ToggleHelpPanel()
+    {
+        isInHelp = !isInHelp;
+        helpMenu.alpha = isInHelp ? 1f : 0f;
+        helpMenu.interactable = isInHelp;
+        helpMenu.blocksRaycasts = isInHelp;
+    }
+    public void ToggleSound()
+    {
+        isSoundOn = !isSoundOn;
+
+        // Example: mute/unmute all audio
+        AudioListener.volume = isSoundOn ? 1f : 0f;
+
+        // Update button text
+        soundToggleText.text = isSoundOn ? "Sound On" : "Sound Off";
+    }
+
+      public void ToggleGameMode()
+    {
+        SpecialTileMode = !SpecialTileMode;
+
+        if (SpecialTileMode)
+        {
+            gameModeButtonText.text = "Mode: Special";
+            PlayerPrefs.SetInt("GameMode", 1);
+        }
+        else
+        {
+            gameModeButtonText.text = "Mode: Classic";
+            PlayerPrefs.SetInt("GameMode", 0);
+        }
+
+        PlayerPrefs.Save(); // Ensure it's written to disk
+    }
+
+// Trigger game over sequence
+public void GameOver()
     {
         board.enabled = false;
-        gameOver.interactable = true;
-        gameOver.blocksRaycasts = true;
+        gameOverScene.interactable = true;
+        gameOverScene.blocksRaycasts = true;
         restartButton.SetActive(false);
+        optionButton.SetActive(false);
+        databaseManager.SaveScore(score);
+        StartCoroutine(Fade(gameOverScene, 1f, 1f)); // Smooth fade-in
+    }
+    private void LoadGameMode()
+    {
+        int mode = PlayerPrefs.GetInt("GameMode", 0); // Default is Classic (0)
+        SpecialTileMode = (mode == 1);
 
-        StartCoroutine(Fade(gameOver, 1f, 1f)); // Smooth fade-in
+        if (SpecialTileMode)
+            gameModeButtonText.text = "Mode: Special Tiles";
+        else
+            gameModeButtonText.text = "Mode: Classic";
     }
 
     // Prepare the number of the next tile to be spawned
