@@ -16,6 +16,81 @@ public class TileBoard : MonoBehaviour
     private bool forceNextTile = false;
     public bool allowInput = true;
 
+    [System.Serializable]
+    public class TileData
+    {
+        public int x;
+        public int y;
+        public int value;
+    }
+
+    [System.Serializable]
+    public class BoardState
+    {
+        public List<TileData> tiles;
+        public int score;
+    }
+    public string GetBoardJson()
+    {
+        BoardState state = new BoardState();
+        state.tiles = new List<TileData>();
+        state.score = gameManager.getScore();
+
+        foreach (var tile in tiles)
+        {
+            if (tile != null && tile.cell != null)
+            {
+                state.tiles.Add(new TileData
+                {
+                    x = tile.cell.coordinates.x,
+                    y = tile.cell.coordinates.y,
+                    value = tile.number
+                });
+            }
+        }
+
+        return JsonUtility.ToJson(state);
+    }
+
+    public void RestoreBoardFromJson(string json)
+    {
+        Debug.Log("Restoring board from JSON: " + json);
+
+        if (string.IsNullOrEmpty(json))
+        {
+            Debug.LogWarning("JSON is empty or null.");
+            return;
+        }
+        BoardState state = JsonUtility.FromJson<BoardState>(json);
+
+        if (tiles == null||state.tiles==null)
+        {
+            Debug.LogWarning("Deserialized board or tile list is null.");
+            return;
+        }
+        ClearBoard(); // You must remove all current tiles from the board
+
+        foreach (var tileInfo in state.tiles)
+        {
+            Tile tile = Instantiate(tilePrefab, grid.transform);
+            int index = IndexOf(tileInfo.value);
+            tile.SetState(tileStates[index], tileInfo.value);
+
+            TileCell cell = grid.GetCell(tileInfo.x, tileInfo.y);
+            if (cell == null)
+            {
+                Debug.LogWarning($"Cell not found at ({tileInfo.x}, {tileInfo.y})");
+                continue;
+            }
+            tile.Spawn(cell);
+
+            tiles.Add(tile);
+        }
+        Debug.Log("Board restored with " + tiles.Count + " tiles.");
+        gameManager.SetScore(state.score);
+    }
+
+
     private void Awake()
     {
         grid = GetComponentInChildren<TileGrid>();
@@ -66,7 +141,7 @@ public class TileBoard : MonoBehaviour
     {
         Tile tile = Instantiate(tilePrefab, grid.transform);
 
-        int roll = Random.Range(0, 100);
+        int roll = Random.Range(0, 50);
         if (roll == 22)
         {
             tile.SetState(tileStates[tileStates.Length - 2], 2222, true);
@@ -319,6 +394,12 @@ public class TileBoard : MonoBehaviour
         else
         {
             number = b.number * 2;
+        }
+        if (number > gameManager.highestTile)
+        {
+            gameManager.highestTile = number;
+            PlayerPrefs.SetInt("HighestTile", gameManager.highestTile);
+            PlayerPrefs.Save();
         }
 
         int index = IndexOf(number);

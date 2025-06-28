@@ -31,10 +31,14 @@ public class GameManager : MonoBehaviour
     public TextMeshProUGUI helpText;
     public CanvasGroup scoreboardScene;
     public TextMeshProUGUI scoreboardText;
+    public TextMeshProUGUI gameModeNoticeText;
     public DatabaseManager databaseManager;
+    private Coroutine noticeCoroutine;
 
     public bool SpecialTileMode = false;
-    private int score;                              // Internal score counter
+    public bool pendingSpecialTileMode = false;
+    private int score;    // Internal score counter 
+    public int highestTile;
     private bool waitingForAnyKey = false;          // Controls transition from main menu to game
     private int nextTileNumber;                     // Holds the number for the next tile
     private int sameNextTileStreak = 0;
@@ -42,17 +46,28 @@ public class GameManager : MonoBehaviour
     private bool isInOptions = false;
     private bool isSoundOn = true;
     private bool isInHelp = false;
+    private int unlockThreshold = 160;
 
     void Start()
     {
-        ShowMainMenu();     // Initialize to main menu
+        (int score, string savedJson) = DatabaseManager.Instance.LoadGameState();
+
+        if (!string.IsNullOrEmpty(savedJson))
+        {
+            board.RestoreBoardFromJson(savedJson);
+            SetScore(score);
+        }
+
+        ShowMainMenu();     // Show main menu only if no game to resume
+        PrepareNextTile();  // Preload first tile
         LoadGameMode();
-        PrepareNextTile();  // Preload the first next tile
         HidePauseMenu();
-        
+
+        highestTile = PlayerPrefs.GetInt("HighestTile", 0);
         soundToggleText.text = isSoundOn ? "Sound On" : "Sound Off";
-        gameModeButtonText.text = SpecialTileMode ? "Mode: Special" : "Mode: Classic";
+        gameModeButtonText.text = pendingSpecialTileMode ? "Mode: Special" : "Mode: Classic";
     }
+
 
     void Update()
     {
@@ -145,7 +160,8 @@ public class GameManager : MonoBehaviour
 
         isPaused = false;
         HidePauseMenu();  // Hide pause UI just in case
-        
+
+
     }
     public void HideOptionsMenu()
     {
@@ -166,12 +182,13 @@ public class GameManager : MonoBehaviour
         mainMenu.interactable = false;
         mainMenu.blocksRaycasts = false;
         board.allowInput = true;
-        NewGame();
+        NewGameWithSave();
     }
 
     // Start a new game session
     public void NewGame()
     {
+        SpecialTileMode = pendingSpecialTileMode;
         SetScore(0); // Reset score
         hiscoreText.text = LoadHiscore().ToString();
 
@@ -190,6 +207,42 @@ public class GameManager : MonoBehaviour
 
         PrepareNextTile(); // Set up the first tile to be dropped
     }
+    public void NewGameWithSave()
+    {
+        SpecialTileMode = pendingSpecialTileMode;
+        SetScore(0); // Reset score
+        hiscoreText.text = LoadHiscore().ToString();
+
+        // Hide game over UI
+        gameOverScene.alpha = 0f;
+        gameOverScene.interactable = false;
+
+        board.ClearBoard(); // Always clear the board before a new game
+
+        // Try to load saved state
+        var (savedScore, savedBoardJson) = DatabaseManager.Instance.LoadGameState();
+
+        if (!string.IsNullOrEmpty(savedBoardJson))
+        {
+            // Restore if saved state exists
+            SetScore(savedScore);
+            board.RestoreBoardFromJson(savedBoardJson);
+        }
+        else
+        {
+            // No save data — create default tiles
+            board.CreateSpecificTile(2);
+            board.CreateSpecificTile(3);
+            board.CreateSpecificTile(5);
+        }
+
+        board.enabled = true;
+        restartButton.SetActive(true);
+        optionButton.SetActive(true);
+
+        PrepareNextTile(); // Ready next tile for gameplay
+    }
+
 
     // Return to main menu
     public void BackToMenu()
@@ -205,11 +258,15 @@ public class GameManager : MonoBehaviour
     }
 
     // Update the score and save high score if needed
-    private void SetScore(int score)
+    public void SetScore(int score)
     {
         this.score = score;
         scoreText.text = score.ToString();
         SaveHiscore();
+    }
+    public int getScore()
+    {
+        return this.score;
     }
 
     // Save score to PlayerPrefs if it's higher than existing high score
@@ -272,6 +329,7 @@ public class GameManager : MonoBehaviour
         nextTileBox.SetActive(true);
         helpButton.SetActive(true);
         board.allowInput = true;
+        gameModeNoticeText.gameObject.SetActive(false);
 
         HidePauseMenu();
         HideOptionsMenu();
@@ -317,11 +375,20 @@ public class GameManager : MonoBehaviour
         soundToggleText.text = isSoundOn ? "Sound On" : "Sound Off";
     }
 
-      public void ToggleGameMode()
+    public void ToggleGameMode()
     {
-        SpecialTileMode = !SpecialTileMode;
+        int highestTile = PlayerPrefs.GetInt("HighestTile", 0);
+        gameModeNoticeText.gameObject.SetActive(true);
+        if (highestTile < unlockThreshold)
+        {
+            if (noticeCoroutine != null) StopCoroutine(noticeCoroutine);
+            noticeCoroutine = StartCoroutine(ShowTemporaryNotice("Unlock Special Mode by reaching tile 160",2f));
+            return;
+        }
 
-        if (SpecialTileMode)
+        pendingSpecialTileMode = !pendingSpecialTileMode;
+
+        if (pendingSpecialTileMode)
         {
             gameModeButtonText.text = "Mode: Special";
             PlayerPrefs.SetInt("GameMode", 1);
@@ -332,27 +399,30 @@ public class GameManager : MonoBehaviour
             PlayerPrefs.SetInt("GameMode", 0);
         }
 
-        PlayerPrefs.Save(); // Ensure it's written to disk
+        PlayerPrefs.Save();
     }
 
-// Trigger game over sequence
-public void GameOver()
+
+    // Trigger game over sequence
+    public void GameOver()
     {
         board.enabled = false;
         gameOverScene.interactable = true;
         gameOverScene.blocksRaycasts = true;
         restartButton.SetActive(false);
         optionButton.SetActive(false);
+        
+        DatabaseManager.Instance.ClearSavedGame();
         databaseManager.SaveScore(score);
         StartCoroutine(Fade(gameOverScene, 1f, 1f)); // Smooth fade-in
     }
     private void LoadGameMode()
     {
         int mode = PlayerPrefs.GetInt("GameMode", 0); // Default is Classic (0)
-        SpecialTileMode = (mode == 1);
+        pendingSpecialTileMode = (mode == 1);
 
-        if (SpecialTileMode)
-            gameModeButtonText.text = "Mode: Special Tiles";
+        if (pendingSpecialTileMode)
+            gameModeButtonText.text = "Mode: Special";
         else
             gameModeButtonText.text = "Mode: Classic";
     }
@@ -407,7 +477,25 @@ public void GameOver()
 
         canvasGroup.alpha = to;
     }
+    private IEnumerator ShowTemporaryNotice(string message, float duration)
+    {
+        gameModeNoticeText.text = message;
+        yield return new WaitForSeconds(duration);
+        gameModeNoticeText.gameObject.SetActive(false);
+    }
 
+
+
+    public void OnApplicationQuit()
+    {
+        if(!board.CheckForGameOver())//to solve start from full board issue
+        {
+            string boardJson = board.GetBoardJson();
+            int currentScore = getScore(); // Replace with your actual score variable
+            DatabaseManager.Instance.SaveGameState(boardJson, currentScore);
+        }
+        
+    }
     // Quit the application (supports both editor and built version)
     public void QuitGame()
     {
