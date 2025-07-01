@@ -1,7 +1,7 @@
-using System.Data;
-using Mono.Data.Sqlite;
-using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine;
+using Mono.Data.Sqlite;
+using System.Data;
 
 [System.Serializable]
 public class GameSaveData
@@ -12,14 +12,13 @@ public class GameSaveData
     public int nextTile;
 }
 
-
 public class DatabaseManager : MonoBehaviour
 {
     public static DatabaseManager Instance { get; private set; }
 
     private string dbPath;
 
-    void Awake()
+    private void Awake()
     {
         if (Instance != null && Instance != this)
         {
@@ -28,27 +27,41 @@ public class DatabaseManager : MonoBehaviour
         }
 
         Instance = this;
-        DontDestroyOnLoad(gameObject); // Optional: if you want persistence between scenes
+        DontDestroyOnLoad(gameObject);
 
         dbPath = "URI=file:" + Application.persistentDataPath + "/stack5.db";
 
+        InitializeDatabase();
+    }
+
+    private void InitializeDatabase()
+    {
         using (var connection = new SqliteConnection(dbPath))
         {
             connection.Open();
             using (var cmd = connection.CreateCommand())
             {
+                // Game state table
                 cmd.CommandText = @"CREATE TABLE IF NOT EXISTS GameState (
                                         ID INTEGER PRIMARY KEY,
                                         Score INTEGER,
                                         TileData TEXT
                                     );";
                 cmd.ExecuteNonQuery();
+
+
             }
         }
     }
 
     public void SaveScore(int score)
     {
+        if (string.IsNullOrEmpty(dbPath))
+        {
+            Debug.LogError("DB path is empty. Cannot save score.");
+            return;
+        }
+
         using (var connection = new SqliteConnection(dbPath))
         {
             connection.Open();
@@ -64,6 +77,12 @@ public class DatabaseManager : MonoBehaviour
     public List<int> GetTopScores()
     {
         var topScores = new List<int>();
+
+        if (string.IsNullOrEmpty(dbPath))
+        {
+            Debug.LogError("DB path is empty. Cannot load scores.");
+            return topScores;
+        }
 
         using (var connection = new SqliteConnection(dbPath))
         {
@@ -85,10 +104,16 @@ public class DatabaseManager : MonoBehaviour
         return topScores;
     }
 
-
     public void SaveGameState(string json, int score)
     {
+        if (string.IsNullOrEmpty(dbPath))
+        {
+            Debug.LogError("DB path is empty. Cannot save game state.");
+            return;
+        }
+
         Debug.Log("Saving Game: Score = " + score + ", Data = " + json);
+
         using (var connection = new SqliteConnection(dbPath))
         {
             connection.Open();
@@ -103,11 +128,18 @@ public class DatabaseManager : MonoBehaviour
                 cmd.ExecuteNonQuery();
             }
         }
+
         Debug.Log("Game saved successfully.");
     }
 
     public (int score, string tileData) LoadGameState()
     {
+        if (string.IsNullOrEmpty(dbPath))
+        {
+            Debug.LogError("DB path is empty. Cannot load game state.");
+            return (0, null);
+        }
+
         using (var connection = new SqliteConnection(dbPath))
         {
             connection.Open();
@@ -126,11 +158,15 @@ public class DatabaseManager : MonoBehaviour
                 }
             }
         }
+
         Debug.LogWarning("No saved game found.");
         return (0, null);
     }
+
     public void ClearSavedGame()
     {
+        if (string.IsNullOrEmpty(dbPath)) return;
+
         using (var connection = new SqliteConnection(dbPath))
         {
             connection.Open();
@@ -142,6 +178,26 @@ public class DatabaseManager : MonoBehaviour
         }
     }
 
+    public void ResetAllGameData()
+    {
+        if (string.IsNullOrEmpty(dbPath)) return;
 
+        using (var connection = new SqliteConnection(dbPath))
+        {
+            connection.Open();
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM GameState;";
+                cmd.ExecuteNonQuery();
+
+                cmd.CommandText = "DELETE FROM HighScores;";
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        PlayerPrefs.DeleteAll();
+        PlayerPrefs.Save();
+
+        Debug.Log("All game data has been reset.");
+    }
 }
-

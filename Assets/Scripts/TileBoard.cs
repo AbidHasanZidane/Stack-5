@@ -15,7 +15,10 @@ public class TileBoard : MonoBehaviour
     private int sameTileStreak = 0;
     private bool forceNextTile = false;
     public bool allowInput = true;
-
+    public int GetTileCount()
+    {
+        return tiles.Count;
+    }
     [System.Serializable]
     public class TileData
     {

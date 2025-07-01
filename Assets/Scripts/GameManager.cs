@@ -2,20 +2,23 @@ using System.Collections;
 using UnityEngine;
 using TMPro;
 using System.Text;
+using UnityEditor.U2D.Aseprite;
 
 // Manages overall game flow, UI states, scoring, and game lifecycle
 public class GameManager : MonoBehaviour
 {
-    public TileBoard board;                         // Reference to the tile board
+    public TileBoard board;
+    public SceneManager scene;                         // Reference to the tile board
     public CanvasGroup gameOverScene;                    // UI overlay shown when the game ends
     public CanvasGroup mainMenu;// UI overlay for the main menu
     public CanvasGroup optionsMenu;
-    public CanvasGroup pauseMenu;        // UI overlay for pause menu
-                                         //public GameObject resumeButton;  
-    public CanvasGroup helpMenu;
+    public CanvasGroup pauseMenu;        // UI overlay for pause men
+    //public GameObject resumeButton;  
+    //public CanvasGroup helpMenu;
+    public CanvasGroup resetConfirmPanel;
     public GameObject optionButton;
     public GameObject restartButton;                // Button to restart the game
-    public GameObject pressEnterKeyText;              // UI text prompting the player to start
+    public TextMeshProUGUI pressAnyKeyText;              // UI text prompting the player to start
     public GameObject soundToggleButton;
     public GameObject scoreBox;
     public GameObject bestScoreBox;
@@ -34,7 +37,7 @@ public class GameManager : MonoBehaviour
     public TextMeshProUGUI gameModeNoticeText;
     public DatabaseManager databaseManager;
     private Coroutine noticeCoroutine;
-
+    private Coroutine blinkCoroutine;
     public bool SpecialTileMode = false;
     public bool pendingSpecialTileMode = false;
     private int score;    // Internal score counter 
@@ -45,11 +48,12 @@ public class GameManager : MonoBehaviour
     private bool isPaused = false;
     private bool isInOptions = false;
     private bool isSoundOn = true;
-    private bool isInHelp = false;
+    private bool isInScoreboard = false;
     private int unlockThreshold = 160;
 
     void Start()
     {
+        blinkCoroutine = StartCoroutine(BlinkText(pressAnyKeyText));
         (int score, string savedJson) = DatabaseManager.Instance.LoadGameState();
 
         if (!string.IsNullOrEmpty(savedJson))
@@ -57,7 +61,6 @@ public class GameManager : MonoBehaviour
             board.RestoreBoardFromJson(savedJson);
             SetScore(score);
         }
-
         ShowMainMenu();     // Show main menu only if no game to resume
         PrepareNextTile();  // Preload first tile
         LoadGameMode();
@@ -79,15 +82,6 @@ public class GameManager : MonoBehaviour
             }
             return; // Block all other input
         }
-        if (isInHelp)
-        {
-            if (isInHelp && Input.GetKeyDown(KeyCode.Escape))
-            {
-                ToggleHelpPanel();
-            }
-            return; // Block all other input
-        }
-
         // 2. If game is paused, allow only ESC to resume
         if (isPaused)
         {
@@ -97,12 +91,20 @@ public class GameManager : MonoBehaviour
             }
             return; // Block all other input
         }
+        if (isInScoreboard)
+        {
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                GameOver();
+            }
+            return; // Block all other input
+        }
 
         // 3. Start game from main menu using Enter key
         if (waitingForAnyKey && Input.anyKeyDown && !Input.GetKeyDown(KeyCode.Escape))
         {
             waitingForAnyKey = false;
-            pressEnterKeyText.SetActive(false);
+            pressAnyKeyText.gameObject.SetActive(false);
             OnStartGamePressed(); // Start the game
             return;
         }
@@ -129,18 +131,18 @@ public class GameManager : MonoBehaviour
         gameOverScene.alpha = 0f;
         gameOverScene.interactable = false;
         gameOverScene.blocksRaycasts = false;
-
+        
         board.enabled = false; // Disable input while on main menu
         restartButton.SetActive(false);
         board.allowInput = false;
 
-        pressEnterKeyText.SetActive(true);
+        pressAnyKeyText.gameObject.SetActive(true);
         waitingForAnyKey = true;
         
         isPaused = false;
         Time.timeScale = 1f;
         HidePauseMenu();  // Hide pause UI just in case
-        isInHelp = false;
+        scene.isInHelp = false;
     }
     public void ShowOptionsMenu()
     {
@@ -152,6 +154,7 @@ public class GameManager : MonoBehaviour
         bestScoreBox.SetActive(false);
         nextTileBox.SetActive(false);
         helpButton.SetActive(false);
+        scene.helpMenu.gameObject.SetActive(false);
 
         board.allowInput = false;
         optionsMenu.alpha = 1f;
@@ -167,6 +170,7 @@ public class GameManager : MonoBehaviour
     {
 
         // Hide Options Menu
+        scene.helpMenu.gameObject.SetActive(true);
         isInOptions = false;
         optionsMenu.alpha = 0f;
         optionsMenu.interactable = false;
@@ -178,11 +182,26 @@ public class GameManager : MonoBehaviour
     // Called when "press any key" is detected or Start button is clicked
     public void OnStartGamePressed()
     {
+        if (blinkCoroutine != null)
+        {
+            StopCoroutine(blinkCoroutine);
+        }
+
+        pressAnyKeyText.gameObject.SetActive(false);
         mainMenu.alpha = 0f;
         mainMenu.interactable = false;
         mainMenu.blocksRaycasts = false;
         board.allowInput = true;
-        NewGameWithSave();
+        
+        if(board.GetTileCount()==0)
+        {
+            NewGame();
+        }
+        else
+        {
+            Debug.Log("Current number of tiles: " + board.GetTileCount());
+            NewGameWithSave();
+        }
     }
 
     // Start a new game session
@@ -222,7 +241,7 @@ public class GameManager : MonoBehaviour
         // Try to load saved state
         var (savedScore, savedBoardJson) = DatabaseManager.Instance.LoadGameState();
 
-        if (!string.IsNullOrEmpty(savedBoardJson))
+        if (!string.IsNullOrEmpty(savedBoardJson) && savedBoardJson.Contains("["))
         {
             // Restore if saved state exists
             SetScore(savedScore);
@@ -230,10 +249,9 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            // No save data — create default tiles
-            board.CreateSpecificTile(2);
-            board.CreateSpecificTile(3);
-            board.CreateSpecificTile(5);
+            Debug.LogWarning("Saved JSON is invalid or empty. Starting new game...");
+            NewGame(); // Fall back to clean game logic
+            return;    // Exit early so we don’t run PrepareNextTile() twice
         }
 
         board.enabled = true;
@@ -247,6 +265,9 @@ public class GameManager : MonoBehaviour
     // Return to main menu
     public void BackToMenu()
     {
+        blinkCoroutine = StartCoroutine(BlinkText(pressAnyKeyText));
+        pressAnyKeyText.gameObject.SetActive(true);
+        gameOverScene.gameObject.SetActive(false);
         board.ClearBoard(); // Optional cleanup
         ShowMainMenu();
     }
@@ -284,13 +305,6 @@ public class GameManager : MonoBehaviour
     {
         return PlayerPrefs.GetInt("hiscore", 0);
     }
-
-    public void HideHelpMenu()
-    {
-        helpMenu.alpha = 0f;
-        helpMenu.interactable = false;
-        helpMenu.blocksRaycasts = false;
-    }
     public void PauseGame()
     {
         isPaused = true;
@@ -307,6 +321,7 @@ public class GameManager : MonoBehaviour
         pauseMenu.alpha = 1f;
         pauseMenu.interactable = true;
         pauseMenu.blocksRaycasts = true;
+        
     }
     private void HidePauseMenu()
     {
@@ -319,7 +334,7 @@ public class GameManager : MonoBehaviour
     public void ResumeGame()
     {
         isPaused = false;
-        isInHelp = false;
+        scene.isInHelp = false;
         Time.timeScale = 1f;
 
         restartButton.SetActive(true);
@@ -333,8 +348,8 @@ public class GameManager : MonoBehaviour
 
         HidePauseMenu();
         HideOptionsMenu();
-        HideHelpMenu();
-        
+        scene.HideHelpMenu();
+
     }
 
     public void ShowScoreboard()
@@ -342,6 +357,7 @@ public class GameManager : MonoBehaviour
         scoreboardScene.alpha = 1f;
         scoreboardScene.interactable = true;
         scoreboardScene.blocksRaycasts = true;
+        helpButton.SetActive(false);
 
         var scores = databaseManager.GetTopScores();
         StringBuilder sb = new StringBuilder("Top Scores:\n");
@@ -355,15 +371,27 @@ public class GameManager : MonoBehaviour
 
         scoreboardText.text = sb.ToString(); // Make sure you set this to a UI Text/TMP field
     }
-
-
-    public void ToggleHelpPanel()
+    public void HideScoreboard()
     {
-        isInHelp = !isInHelp;
-        helpMenu.alpha = isInHelp ? 1f : 0f;
-        helpMenu.interactable = isInHelp;
-        helpMenu.blocksRaycasts = isInHelp;
+        scoreboardScene.alpha = 0f;
+        scoreboardScene.interactable = false;
+        scoreboardScene.blocksRaycasts = false;
     }
+    public void ToggleScoreboard()
+    {
+        isInScoreboard = !isInScoreboard;
+
+        if (isInScoreboard)
+        {
+            ShowScoreboard();
+        }
+        else
+        {
+            HideScoreboard();
+        }
+    }
+
+
     public void ToggleSound()
     {
         isSoundOn = !isSoundOn;
@@ -378,13 +406,22 @@ public class GameManager : MonoBehaviour
     public void ToggleGameMode()
     {
         int highestTile = PlayerPrefs.GetInt("HighestTile", 0);
-        gameModeNoticeText.gameObject.SetActive(true);
+
+        // Show notice ONLY if not yet unlocked
         if (highestTile < unlockThreshold)
         {
-            if (noticeCoroutine != null) StopCoroutine(noticeCoroutine);
-            noticeCoroutine = StartCoroutine(ShowTemporaryNotice("Unlock Special Mode by reaching tile 160",2f));
+            gameModeNoticeText.gameObject.SetActive(true);
+
+            if (noticeCoroutine != null)
+                StopCoroutine(noticeCoroutine);
+
+            noticeCoroutine = StartCoroutine(
+                ShowTemporaryNotice($"Unlock Special Mode by reaching tile {unlockThreshold}", 2f)
+            );
             return;
         }
+
+        gameModeNoticeText.gameObject.SetActive(false);
 
         pendingSpecialTileMode = !pendingSpecialTileMode;
 
@@ -403,17 +440,21 @@ public class GameManager : MonoBehaviour
     }
 
 
+
     // Trigger game over sequence
     public void GameOver()
     {
+        gameOverScene.gameObject.SetActive(true);
         board.enabled = false;
         gameOverScene.interactable = true;
         gameOverScene.blocksRaycasts = true;
         restartButton.SetActive(false);
         optionButton.SetActive(false);
-        
-        DatabaseManager.Instance.ClearSavedGame();
-        databaseManager.SaveScore(score);
+        if (DatabaseManager.Instance != null)
+        {
+            DatabaseManager.Instance.SaveScore(score);
+        }
+        DatabaseManager.Instance.ClearSavedGame();  
         StartCoroutine(Fade(gameOverScene, 1f, 1f)); // Smooth fade-in
     }
     private void LoadGameMode()
@@ -477,13 +518,70 @@ public class GameManager : MonoBehaviour
 
         canvasGroup.alpha = to;
     }
+
+    private IEnumerator BlinkText(TextMeshProUGUI textElement)
+    {
+        float duration = 1.5f;
+        float alpha = 0f;
+        Color originalColor = textElement.color;
+
+        while (true)
+        {
+            // Fade In
+            while (alpha < 1f)
+            {
+                alpha += Time.deltaTime / duration;
+                textElement.color = new Color(originalColor.r, originalColor.g, originalColor.b, alpha);
+                yield return null;
+            }
+
+            // Fade Out
+            while (alpha > 0f)
+            {
+                alpha -= Time.deltaTime / duration;
+                textElement.color = new Color(originalColor.r, originalColor.g, originalColor.b, alpha);
+                yield return null;
+            }
+        }
+    }
+
     private IEnumerator ShowTemporaryNotice(string message, float duration)
     {
         gameModeNoticeText.text = message;
         yield return new WaitForSeconds(duration);
         gameModeNoticeText.gameObject.SetActive(false);
     }
+ 
 
+    public void ShowResetConfirmPanel()
+    {
+        HideOptionsMenu();
+        resetConfirmPanel.alpha = 1f;
+        resetConfirmPanel.interactable = true;
+        resetConfirmPanel.blocksRaycasts = true;
+    }
+
+    public void HideResetConfirmPanel()
+    {
+        ShowOptionsMenu();
+        resetConfirmPanel.alpha = 0f;
+        resetConfirmPanel.interactable = false;
+        resetConfirmPanel.blocksRaycasts = false;
+    }
+
+    public void ConfirmReset()
+    {
+        DatabaseManager.Instance.ResetAllGameData();
+        HideResetConfirmPanel();
+
+        // Reload the main menu or current scene
+        QuitGame();
+    }
+
+    public void CancelReset()
+    {
+        HideResetConfirmPanel();
+    }
 
 
     public void OnApplicationQuit()
@@ -496,6 +594,7 @@ public class GameManager : MonoBehaviour
         }
         
     }
+
     // Quit the application (supports both editor and built version)
     public void QuitGame()
     {
