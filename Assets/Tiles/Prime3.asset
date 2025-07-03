@@ -13,5 +13,5 @@ MonoBehaviour:
   m_Name: Prime3
   m_EditorClassIdentifier: 
   number: 3333
-  backgroundColor: {r: 0.5101428, g: 0.11544157, b: 0.800539, a: 1}
+  backgroundColor: {r: 0.46880132, g: 0.23675716, b: 0.638814, a: 1}
   textColor: {r: 0, g: 0, b: 0, a: 1}

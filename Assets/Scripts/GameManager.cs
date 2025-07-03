@@ -3,6 +3,7 @@ using UnityEngine;
 using TMPro;
 using System.Text;
 using UnityEditor.U2D.Aseprite;
+using UnityEngine.UI;
 
 // Manages overall game flow, UI states, scoring, and game lifecycle
 public class GameManager : MonoBehaviour
@@ -24,6 +25,7 @@ public class GameManager : MonoBehaviour
     public GameObject bestScoreBox;
     public GameObject nextTileBox;
     public GameObject helpButton;
+    public Image nextTileImage;
     public TextMeshProUGUI scoreText;               // Current score display
     public TextMeshProUGUI hiscoreText;             // High score display
     public TextMeshProUGUI nextTileText;            // Shows the number of the next tile to be spawned
@@ -38,6 +40,9 @@ public class GameManager : MonoBehaviour
     public DatabaseManager databaseManager;
     private Coroutine noticeCoroutine;
     private Coroutine blinkCoroutine;
+    public string lastBoardJson; // Stores last move's state
+    public int lastScore;
+
     public bool SpecialTileMode = false;
     public bool pendingSpecialTileMode = false;
     private int score;    // Internal score counter 
@@ -152,7 +157,10 @@ public class GameManager : MonoBehaviour
         optionButton.SetActive(false);
         scoreBox.SetActive(false);
         bestScoreBox.SetActive(false);
+
         nextTileBox.SetActive(false);
+        nextTileImage.gameObject.SetActive(false);
+
         helpButton.SetActive(false);
         scene.helpMenu.gameObject.SetActive(false);
 
@@ -191,17 +199,21 @@ public class GameManager : MonoBehaviour
         mainMenu.alpha = 0f;
         mainMenu.interactable = false;
         mainMenu.blocksRaycasts = false;
+
+        board.enabled = true; // Disable input while on main menu
+        restartButton.SetActive(true);
         board.allowInput = true;
-        
-        if(board.GetTileCount()==0)
+        nextTileBox.SetActive(true);
+        nextTileImage.gameObject.SetActive(true);
+        if (board.GetTileCount()==0)
         {
             NewGame();
         }
         else
         {
-            Debug.Log("Current number of tiles: " + board.GetTileCount());
             NewGameWithSave();
         }
+        
     }
 
     // Start a new game session
@@ -223,6 +235,9 @@ public class GameManager : MonoBehaviour
         board.enabled = true;          // Enable board input
         restartButton.SetActive(true); // Show restart button
         optionButton.SetActive(true);
+        helpButton.SetActive(true);
+        nextTileBox.SetActive(true);
+        nextTileImage.gameObject.SetActive(true);
 
         PrepareNextTile(); // Set up the first tile to be dropped
     }
@@ -310,8 +325,8 @@ public class GameManager : MonoBehaviour
         isPaused = true;
         Time.timeScale = 0f;
 
-        restartButton.SetActive(false);
-        optionButton.SetActive(false);
+        restartButton.SetActive(true);
+        optionButton.SetActive(true);
         scoreBox.SetActive(false);
         bestScoreBox.SetActive(false);
         nextTileBox.SetActive(false);
@@ -342,6 +357,7 @@ public class GameManager : MonoBehaviour
         scoreBox.SetActive(true);
         bestScoreBox.SetActive(true);
         nextTileBox.SetActive(true);
+        nextTileImage.gameObject.SetActive(true);
         helpButton.SetActive(true);
         board.allowInput = true;
         gameModeNoticeText.gameObject.SetActive(false);
@@ -439,6 +455,15 @@ public class GameManager : MonoBehaviour
         PlayerPrefs.Save();
     }
 
+    public void UndoLastMove()
+    {
+        if (!string.IsNullOrEmpty(lastBoardJson))
+        {
+            board.RestoreBoardFromJson(lastBoardJson);
+            SetScore(lastScore);
+            PrepareNextTile(); // have to restore the previously shown next tile here
+        }
+    }
 
 
     // Trigger game over sequence
@@ -450,6 +475,9 @@ public class GameManager : MonoBehaviour
         gameOverScene.blocksRaycasts = true;
         restartButton.SetActive(false);
         optionButton.SetActive(false);
+        helpButton.SetActive(false);
+        nextTileBox.SetActive(false);
+        nextTileImage.gameObject.SetActive(false);
         if (DatabaseManager.Instance != null)
         {
             DatabaseManager.Instance.SaveScore(score);
@@ -467,6 +495,7 @@ public class GameManager : MonoBehaviour
         else
             gameModeButtonText.text = "Mode: Classic";
     }
+ 
 
     // Prepare the number of the next tile to be spawned
     public void PrepareNextTile()
@@ -489,9 +518,21 @@ public class GameManager : MonoBehaviour
         }
 
         nextTileNumber = newNumber;
-        nextTileNumber = newNumber;
-        nextTileText.text = nextTileNumber.ToString();
+
+        // Update preview visually using tileStates
+        TileState previewState = board.GetStateForNumber(nextTileNumber);
+        if (previewState != null)
+        {
+            nextTileImage.color = previewState.backgroundColor;
+            nextTileText.color = previewState.textColor;
+            nextTileText.text = nextTileNumber.ToString();
+        }
+        else
+        {
+            Debug.LogWarning("No tile state found for number " + nextTileNumber);
+        }
     }
+
 
 
     // Return the prepared next tile value
@@ -572,10 +613,12 @@ public class GameManager : MonoBehaviour
     public void ConfirmReset()
     {
         DatabaseManager.Instance.ResetAllGameData();
+        board.ClearBoard();
+        SetScore(0);
         HideResetConfirmPanel();
 
         // Reload the main menu or current scene
-        QuitGame();
+        UnityEngine.SceneManagement.SceneManager.LoadScene(0);
     }
 
     public void CancelReset()

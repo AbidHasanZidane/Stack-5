@@ -93,7 +93,15 @@ public class TileBoard : MonoBehaviour
         gameManager.SetScore(state.score);
     }
 
-
+    public TileState GetStateForNumber(int number)
+    {
+        foreach (var state in tileStates)
+        {
+            if (state.number == number)
+                return state;
+        }
+        return null;
+    }
     private void Awake()
     {
         grid = GetComponentInChildren<TileGrid>();
@@ -315,6 +323,8 @@ public class TileBoard : MonoBehaviour
     }
     private void Move(Vector2Int direction,int startX,int incrementX,int startY,int incrementY)
     {
+        gameManager.lastBoardJson = GetBoardJson();
+        gameManager.lastScore = gameManager.getScore();
         bool changed = false;
         for(int x = startX;x>=0 && x<grid.width;x+=incrementX)
         {

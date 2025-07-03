@@ -27,7 +27,7 @@ public class Tile : MonoBehaviour
         this.number = number;
 
         background.color = state.backgroundColor;
-        text.color = state.textColor;
+        text.color = this.state.textColor;
         text.text = number.ToString();
     }
 
