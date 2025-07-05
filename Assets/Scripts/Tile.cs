@@ -5,33 +5,30 @@ using UnityEngine.UI;
 
 public class Tile : MonoBehaviour
 {
-    public TileState state { get; private set; }  // Stores the current visual and logical state of the tile
-    public TileCell cell { get; private set; }    // Reference to the cell this tile occupies
-    public int number { get; private set; }       // The number shown on the tile
-    public bool locked { get; set; }              // Lock to prevent multiple merges in one move
+    public TileState state { get; private set; }
+    public TileCell cell { get; private set; }
+    public int number { get; private set; }
+    public bool locked { get; set; }
 
-    private Image background;                     // UI Image component for background color
-    private TextMeshProUGUI text;                 // Text component for displaying the number
+    private Image background;
+    private TextMeshProUGUI text;
 
     private void Awake()
     {
-        // Cache references to UI components
         background = GetComponent<Image>();
         text = GetComponentInChildren<TextMeshProUGUI>();
     }
 
-    // Sets the tile’s display and number state
     public void SetState(TileState state, int number, bool isPrime = false)
     {
         this.state = state;
         this.number = number;
 
         background.color = state.backgroundColor;
-        text.color = this.state.textColor;
+        text.color = state.textColor;
         text.text = number.ToString();
     }
 
-    // Assigns the tile to a specific cell without animation
     public void Spawn(TileCell cell)
     {
         if (this.cell != null)
@@ -45,52 +42,40 @@ public class Tile : MonoBehaviour
         transform.position = cell.transform.position;
     }
 
-    // Moves the tile to a new cell with animation
-    public void MoveTo(TileCell cell)
+    public void MoveTo(TileCell targetCell)
     {
-        if (this.cell != null)
-        {
-            this.cell.tile = null; // Clear previous cell
-        }
+        if (cell != null)
+            cell.tile = null;
 
-        this.cell = cell;
-        this.cell.tile = this;
+        cell = targetCell;
+        cell.tile = this;
 
-        StartCoroutine(Animate(cell.transform.position, false));
+        LeanTween.move(gameObject, targetCell.transform.position, 0.15f).setEaseOutQuad();
     }
 
-    // Handles tile merging animation and state update
-    public void Merge(TileCell cell)
+    public void Merge(TileCell targetCell)
     {
-        if (this.cell != null)
-        {
-            this.cell.tile = null;
-        }
+        if (cell != null)
+            cell.tile = null;
 
-        this.cell = null;
-        cell.tile.locked = true; // Lock the target tile to prevent multiple merges
-        StartCoroutine(Animate(cell.transform.position, true));
+        cell = null;
+        var targetTile = targetCell.tile;
+        if (targetTile != null)
+            targetTile.locked = true;
+
+        LeanTween.move(gameObject, targetCell.transform.position, 0.15f)
+            .setEaseOutQuad()
+            .setOnComplete(() =>
+            {
+                if (targetTile != null)
+                {
+                    LeanTween.scale(targetTile.gameObject, Vector3.one * 1.2f, 0.15f)
+                             .setEaseOutBack()
+                             .setOnComplete(() => targetTile.transform.localScale = Vector3.one);
+                }
+
+                Destroy(gameObject);
+            });
     }
 
-    // Smooth animation for moving or merging the tile
-    private IEnumerator Animate(Vector3 to, bool merging)
-    {
-        float elapsed = 0f;
-        float duration = 0.08f;
-        Vector3 from = transform.position;
-
-        while (elapsed < duration)
-        {
-            transform.position = Vector3.Lerp(from, to, elapsed / duration);
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        transform.position = to;
-
-        if (merging)
-        {
-            Destroy(gameObject); // Remove tile object after merge animation
-        }
-    }
 }

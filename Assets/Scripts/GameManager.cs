@@ -14,17 +14,21 @@ public class GameManager : MonoBehaviour
     public CanvasGroup mainMenu;// UI overlay for the main menu
     public CanvasGroup optionsMenu;
     public CanvasGroup pauseMenu;        // UI overlay for pause men
-    //public GameObject resumeButton;  
+    public GameObject resumeButton;  
     //public CanvasGroup helpMenu;
     public CanvasGroup resetConfirmPanel;
     public GameObject optionButton;
     public GameObject restartButton;                // Button to restart the game
+    public GameObject restartButtonGameOver;
     public TextMeshProUGUI pressAnyKeyText;              // UI text prompting the player to start
     public GameObject soundToggleButton;
-    public GameObject scoreBox;
-    public GameObject bestScoreBox;
+    public GameObject ScoreBox;
+    //public GameObject bestScoreBox;
     public GameObject nextTileBox;
     public GameObject helpButton;
+    public GameObject NObtn;
+    public GameObject menuButton;
+    public GameObject undoButton;
     public Image nextTileImage;
     public TextMeshProUGUI scoreText;               // Current score display
     public TextMeshProUGUI hiscoreText;             // High score display
@@ -40,6 +44,8 @@ public class GameManager : MonoBehaviour
     public DatabaseManager databaseManager;
     private Coroutine noticeCoroutine;
     private Coroutine blinkCoroutine;
+    public TextMeshProUGUI suggestionText;
+
     public string lastBoardJson; // Stores last move's state
     public int lastScore;
 
@@ -54,7 +60,10 @@ public class GameManager : MonoBehaviour
     private bool isInOptions = false;
     private bool isSoundOn = true;
     private bool isInScoreboard = false;
-    private int unlockThreshold = 160;
+    private int unlockThreshold = 320;
+    private float idleTime = 0f;
+    private float idleThreshold = 5f; // Time in seconds before showing suggestion
+    private bool suggestionShown = false;
 
     void Start()
     {
@@ -79,11 +88,33 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
+        // if (!board.allowInput || isPaused || isInOptions || isInScoreboard)
+        //     return;
+
+        if (Input.anyKeyDown)
+        {
+            idleTime = 0f;
+            if (suggestionShown)
+            {
+                HideSuggestion(); // Hide if previously shown
+            }
+        }
+        else
+        {
+            idleTime += Time.deltaTime;
+
+            if (idleTime >= idleThreshold && !suggestionShown)
+            {
+                SuggestNextMove();
+                suggestionShown = true;
+            }
+        }
         if (isInOptions)
         {
             if (Input.GetKeyDown(KeyCode.Escape))
             {
-                ResumeGame(); // Resume game
+                HideOptionsMenu();
+                PauseGame();
             }
             return; // Block all other input
         }
@@ -100,12 +131,11 @@ public class GameManager : MonoBehaviour
         {
             if (Input.GetKeyDown(KeyCode.Escape))
             {
-                GameOver();
+                HideScoreboard();
             }
             return; // Block all other input
         }
 
-        // 3. Start game from main menu using Enter key
         if (waitingForAnyKey && Input.anyKeyDown && !Input.GetKeyDown(KeyCode.Escape))
         {
             waitingForAnyKey = false;
@@ -114,6 +144,7 @@ public class GameManager : MonoBehaviour
             return;
         }
 
+
         // 4. Pause the game while playing (board enabled)
         if (board.enabled && Input.GetKeyDown(KeyCode.Escape))
         {
@@ -121,7 +152,7 @@ public class GameManager : MonoBehaviour
         }
     }
 
-
+    //Scenes
     // Display the main menu and reset game state
     public void ShowMainMenu()
     {
@@ -155,21 +186,19 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 0f;
         restartButton.SetActive(false);
         optionButton.SetActive(false);
-        scoreBox.SetActive(false);
-        bestScoreBox.SetActive(false);
+        ScoreBox.SetActive(false);
 
         nextTileBox.SetActive(false);
-        nextTileImage.gameObject.SetActive(false);
-
         helpButton.SetActive(false);
         scene.helpMenu.gameObject.SetActive(false);
-
+        // EventSystem.current.SetSelectedGameObject(null);
+        // EventSystem.current.SetSelectedGameObject(soundToggleButton.gameObject);
         board.allowInput = false;
         optionsMenu.alpha = 1f;
         optionsMenu.interactable = true;
         optionsMenu.blocksRaycasts = true;
 
-        isPaused = false;
+        isPaused = true;
         HidePauseMenu();  // Hide pause UI just in case
 
 
@@ -186,7 +215,68 @@ public class GameManager : MonoBehaviour
 
 
     }
+    // Return to main menu
+    public void BackToMenu()
+    {
+        DatabaseManager.Instance.ClearSavedGame();
+        blinkCoroutine = StartCoroutine(BlinkText(pressAnyKeyText));
+        pressAnyKeyText.gameObject.SetActive(true);
+        gameOverScene.gameObject.SetActive(false);
+        board.ClearBoard(); // Optional cleanup
+        ShowMainMenu();
+    }
+    public void PauseGame()
+    {
+        isPaused = true;
+        Time.timeScale = 0f;
 
+        menuButton.SetActive(false);
+        undoButton.SetActive(false);
+        restartButton.SetActive(true);
+        optionButton.SetActive(true);
+        ScoreBox.SetActive(false);
+        nextTileBox.SetActive(false);
+        helpButton.SetActive(true);
+        board.allowInput = false;
+
+        // EventSystem.current.SetSelectedGameObject(null); // Clear previous selection
+        // EventSystem.current.SetSelectedGameObject(resumeButton.gameObject); // Set new
+
+        pauseMenu.alpha = 1f;
+        pauseMenu.interactable = true;
+        pauseMenu.blocksRaycasts = true;
+
+    }
+    private void HidePauseMenu()
+    {
+
+        pauseMenu.alpha = 0f;
+        pauseMenu.interactable = false;
+        pauseMenu.blocksRaycasts = false;
+    }
+
+    public void ResumeGame()
+    {
+        isPaused = false;
+        scene.isInHelp = false;
+        Time.timeScale = 1f;
+
+        menuButton.SetActive(true);
+        undoButton.SetActive(true);
+        restartButton.SetActive(true);
+        optionButton.SetActive(true);
+        ScoreBox.SetActive(true);
+        nextTileBox.SetActive(true);
+
+        helpButton.SetActive(true);
+        board.allowInput = true;
+        gameModeNoticeText.gameObject.SetActive(false);
+
+        HidePauseMenu();
+        HideOptionsMenu();
+        scene.HideHelpMenu();
+
+    }
     // Called when "press any key" is detected or Start button is clicked
     public void OnStartGamePressed()
     {
@@ -201,10 +291,8 @@ public class GameManager : MonoBehaviour
         mainMenu.blocksRaycasts = false;
 
         board.enabled = true; // Disable input while on main menu
-        restartButton.SetActive(true);
         board.allowInput = true;
         nextTileBox.SetActive(true);
-        nextTileImage.gameObject.SetActive(true);
         if (board.GetTileCount()==0)
         {
             NewGame();
@@ -214,6 +302,18 @@ public class GameManager : MonoBehaviour
             NewGameWithSave();
         }
         
+    }
+    public void RestartGame()
+    {
+        // Reset all possible input blockers
+        isPaused = false;
+        isInOptions = false;
+        //waitingForAnyKey = false;
+        isInScoreboard = false;
+
+        Time.timeScale = 1f;
+        // Restart the actual game
+        NewGame();
     }
 
     // Start a new game session
@@ -227,17 +327,18 @@ public class GameManager : MonoBehaviour
         gameOverScene.alpha = 0f;
         gameOverScene.interactable = false;
 
+        HidePauseMenu();
         board.ClearBoard();
         board.CreateSpecificTile(2);
         board.CreateSpecificTile(3);
         board.CreateSpecificTile(5);
 
-        board.enabled = true;          // Enable board input
-        restartButton.SetActive(true); // Show restart button
-        optionButton.SetActive(true);
-        helpButton.SetActive(true);
+        board.allowInput = true;
+        board.enabled = true;
+        menuButton.SetActive(true);
+        undoButton.SetActive(true);          // Enable board input
+        ScoreBox.SetActive(true);
         nextTileBox.SetActive(true);
-        nextTileImage.gameObject.SetActive(true);
 
         PrepareNextTile(); // Set up the first tile to be dropped
     }
@@ -270,22 +371,56 @@ public class GameManager : MonoBehaviour
         }
 
         board.enabled = true;
-        restartButton.SetActive(true);
-        optionButton.SetActive(true);
+        board.allowInput = true;
+        menuButton.SetActive(true);
+        undoButton.SetActive(true);
+        ScoreBox.SetActive(true);
+        nextTileBox.SetActive(true);
 
         PrepareNextTile(); // Ready next tile for gameplay
     }
 
 
-    // Return to main menu
-    public void BackToMenu()
+    // Trigger game over sequence
+    public void GameOver()
     {
-        blinkCoroutine = StartCoroutine(BlinkText(pressAnyKeyText));
-        pressAnyKeyText.gameObject.SetActive(true);
-        gameOverScene.gameObject.SetActive(false);
-        board.ClearBoard(); // Optional cleanup
-        ShowMainMenu();
+        // EventSystem.current.SetSelectedGameObject(null); // Clear previous selection
+        // EventSystem.current.SetSelectedGameObject(restartButtonGameOver.gameObject); // Set new
+        gameOverScene.gameObject.SetActive(true);
+        board.enabled = false;
+        gameOverScene.interactable = true;
+        gameOverScene.blocksRaycasts = true;
+
+        menuButton.SetActive(false);
+        undoButton.SetActive(false);
+        ScoreBox.SetActive(false);
+        nextTileBox.SetActive(false);
+
+        if (DatabaseManager.Instance != null)
+        {
+            DatabaseManager.Instance.SaveScore(score);
+        }
+        DatabaseManager.Instance.ClearSavedGame();
+        StartCoroutine(Fade(gameOverScene, 1f, 1f)); // Smooth fade-in
     }
+
+    private void SuggestNextMove()
+    {
+        string[] directions = { "Up", "Down", "Left", "Right" };
+        int randomIndex = Random.Range(0, directions.Length);
+
+        suggestionText.text = "Try moving: " + directions[randomIndex];
+        suggestionText.gameObject.SetActive(true);
+        //blinkCoroutine  = StartCoroutine(BlinkText(suggestionText));
+    }
+
+    private void HideSuggestion()
+    {
+        suggestionText.text = "";
+        suggestionText.gameObject.SetActive(false);
+        suggestionShown = false;
+    }
+
 
     // Increase score by a certain number of points
     public void IncreaseScore(int points)
@@ -320,56 +455,11 @@ public class GameManager : MonoBehaviour
     {
         return PlayerPrefs.GetInt("hiscore", 0);
     }
-    public void PauseGame()
-    {
-        isPaused = true;
-        Time.timeScale = 0f;
 
-        restartButton.SetActive(true);
-        optionButton.SetActive(true);
-        scoreBox.SetActive(false);
-        bestScoreBox.SetActive(false);
-        nextTileBox.SetActive(false);
-        helpButton.SetActive(false);
-        board.allowInput = false;
-
-        pauseMenu.alpha = 1f;
-        pauseMenu.interactable = true;
-        pauseMenu.blocksRaycasts = true;
-        
-    }
-    private void HidePauseMenu()
-    {
-        
-        pauseMenu.alpha = 0f;
-        pauseMenu.interactable = false;
-        pauseMenu.blocksRaycasts = false;
-    }
-
-    public void ResumeGame()
-    {
-        isPaused = false;
-        scene.isInHelp = false;
-        Time.timeScale = 1f;
-
-        restartButton.SetActive(true);
-        optionButton.SetActive(true);
-        scoreBox.SetActive(true);
-        bestScoreBox.SetActive(true);
-        nextTileBox.SetActive(true);
-        nextTileImage.gameObject.SetActive(true);
-        helpButton.SetActive(true);
-        board.allowInput = true;
-        gameModeNoticeText.gameObject.SetActive(false);
-
-        HidePauseMenu();
-        HideOptionsMenu();
-        scene.HideHelpMenu();
-
-    }
 
     public void ShowScoreboard()
     {
+        scoreboardScene.gameObject.SetActive(true);
         scoreboardScene.alpha = 1f;
         scoreboardScene.interactable = true;
         scoreboardScene.blocksRaycasts = true;
@@ -389,6 +479,7 @@ public class GameManager : MonoBehaviour
     }
     public void HideScoreboard()
     {
+        scoreboardScene.gameObject.SetActive(true);
         scoreboardScene.alpha = 0f;
         scoreboardScene.interactable = false;
         scoreboardScene.blocksRaycasts = false;
@@ -465,26 +556,6 @@ public class GameManager : MonoBehaviour
         }
     }
 
-
-    // Trigger game over sequence
-    public void GameOver()
-    {
-        gameOverScene.gameObject.SetActive(true);
-        board.enabled = false;
-        gameOverScene.interactable = true;
-        gameOverScene.blocksRaycasts = true;
-        restartButton.SetActive(false);
-        optionButton.SetActive(false);
-        helpButton.SetActive(false);
-        nextTileBox.SetActive(false);
-        nextTileImage.gameObject.SetActive(false);
-        if (DatabaseManager.Instance != null)
-        {
-            DatabaseManager.Instance.SaveScore(score);
-        }
-        DatabaseManager.Instance.ClearSavedGame();  
-        StartCoroutine(Fade(gameOverScene, 1f, 1f)); // Smooth fade-in
-    }
     private void LoadGameMode()
     {
         int mode = PlayerPrefs.GetInt("GameMode", 0); // Default is Classic (0)
@@ -597,6 +668,8 @@ public class GameManager : MonoBehaviour
     public void ShowResetConfirmPanel()
     {
         HideOptionsMenu();
+        // EventSystem.current.SetSelectedGameObject(null); // Clear previous selection
+        // EventSystem.current.SetSelectedGameObject(NObtn.gameObject); // Set new
         resetConfirmPanel.alpha = 1f;
         resetConfirmPanel.interactable = true;
         resetConfirmPanel.blocksRaycasts = true;

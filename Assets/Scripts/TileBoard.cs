@@ -15,6 +15,7 @@ public class TileBoard : MonoBehaviour
     private int sameTileStreak = 0;
     private bool forceNextTile = false;
     public bool allowInput = true;
+    public bool isAnimating = false;
     public int GetTileCount()
     {
         return tiles.Count;
@@ -32,6 +33,32 @@ public class TileBoard : MonoBehaviour
     {
         public List<TileData> tiles;
         public int score;
+    }
+
+    private void Update()
+    {
+        if (!waiting && allowInput&&!isAnimating)
+        {
+            if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow))
+            {
+                Move(Vector2Int.up, 0, 1, 1, 1);
+            }
+            else if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow))
+            {
+                Move(Vector2Int.down, 0, 1, grid.height - 2, -1);
+            }
+            else if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
+            {
+                Move(Vector2Int.left, 1, 1, 0, 1);
+
+            }
+            else if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
+            {
+                Move(Vector2Int.right, grid.width - 2, -1, 0, 1);
+            }
+        }
+
+
     }
     public string GetBoardJson()
     {
@@ -295,36 +322,12 @@ public class TileBoard : MonoBehaviour
     }
 
 
-
-    private void Update()
-    {
-        if (!waiting && allowInput)
-        {
-            if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow))
-            {
-                Move(Vector2Int.up, 0, 1, 1, 1);
-            }
-            else if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow))
-            {
-                Move(Vector2Int.down, 0, 1, grid.height - 2, -1);
-            }
-            else if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
-            {
-                Move(Vector2Int.left, 1, 1, 0, 1);
-
-            }
-            else if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
-            {
-                Move(Vector2Int.right, grid.width - 2, -1, 0, 1);
-            }
-        }
-
-
-    }
     private void Move(Vector2Int direction,int startX,int incrementX,int startY,int incrementY)
     {
+        if (waiting&&!allowInput&&isAnimating) return;
         gameManager.lastBoardJson = GetBoardJson();
         gameManager.lastScore = gameManager.getScore();
+        isAnimating = true;
         bool changed = false;
         for(int x = startX;x>=0 && x<grid.width;x+=incrementX)
         {
@@ -341,6 +344,10 @@ public class TileBoard : MonoBehaviour
         {
             StartCoroutine(WaitForChange());
             MoveSound.Play();
+        }
+        else
+        {
+            isAnimating = false;
         }
     }
 
@@ -419,7 +426,7 @@ public class TileBoard : MonoBehaviour
         if (index >= 0 && index < tileStates.Length)
         {
             b.SetState(tileStates[index], number);
-            gameManager.IncreaseScore(number * 2);
+            gameManager.IncreaseScore(number * 5);
         }
 
     }
@@ -438,10 +445,12 @@ public class TileBoard : MonoBehaviour
     private IEnumerator WaitForChange()
     {
         waiting = true;
-        yield return new WaitForSeconds(0.08f);
+        
+        yield return new WaitForSeconds(0.2f);
         waiting = false;
+        isAnimating = false;
 
-        foreach(var Tile in tiles)
+        foreach (var Tile in tiles)
         {
             Tile.locked = false;
         }
@@ -453,6 +462,7 @@ public class TileBoard : MonoBehaviour
         {
             gameManager.GameOver();
         }
+       
     }
 
     public void TriggerPrimeTileEffect(int targetNumber, Tile primeTile)
@@ -481,8 +491,6 @@ public class TileBoard : MonoBehaviour
             Destroy(tile.gameObject);
         }
     }
-
-
     public bool CheckForGameOver()
     {
         if (tiles.Count != grid.size)
