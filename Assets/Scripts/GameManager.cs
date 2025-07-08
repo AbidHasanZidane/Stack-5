@@ -16,7 +16,8 @@ public class GameManager : MonoBehaviour
     public CanvasGroup pauseMenu;        // UI overlay for pause men
     public GameObject resumeButton;  
     //public CanvasGroup helpMenu;
-    public CanvasGroup resetConfirmPanel;
+    public CanvasGroup confirmResetPanel;
+    public CanvasGroup switchModePanel;
     public GameObject optionButton;
     public GameObject restartButton;                // Button to restart the game
     public GameObject restartButtonGameOver;
@@ -45,6 +46,7 @@ public class GameManager : MonoBehaviour
     private Coroutine noticeCoroutine;
     private Coroutine blinkCoroutine;
     public TextMeshProUGUI suggestionText;
+    public TextMeshProUGUI lastMatchStatsText;
 
     public string lastBoardJson; // Stores last move's state
     public int lastScore;
@@ -60,10 +62,15 @@ public class GameManager : MonoBehaviour
     private bool isInOptions = false;
     private bool isSoundOn = true;
     private bool isInScoreboard = false;
-    private int unlockThreshold = 320;
+    private bool isInDataReset = false;
+    private bool isInSwitchGamemode = false;
+    private int unlockThreshold = 80;
     private float idleTime = 0f;
     private float idleThreshold = 5f; // Time in seconds before showing suggestion
     private bool suggestionShown = false;
+    private float matchStartTime = 0f;
+    private float matchEndTime = 0f;
+    private bool isGameOver = false;
 
     void Start()
     {
@@ -88,25 +95,25 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
-        // if (!board.allowInput || isPaused || isInOptions || isInScoreboard)
-        //     return;
-
-        if (Input.anyKeyDown)
-        {
-            idleTime = 0f;
-            if (suggestionShown)
+       if(!isGameOver)
+       {
+            if (Input.anyKeyDown)
             {
-                HideSuggestion(); // Hide if previously shown
+                idleTime = 0f;
+                if (suggestionShown)
+                {
+                    HideSuggestion(); // Hide if previously shown
+                }
             }
-        }
-        else
-        {
-            idleTime += Time.deltaTime;
-
-            if (idleTime >= idleThreshold && !suggestionShown)
+            else
             {
-                SuggestNextMove();
-                suggestionShown = true;
+                idleTime += Time.deltaTime;
+
+                if (idleTime >= idleThreshold && !suggestionShown)
+                {
+                    SuggestNextMove();
+                    suggestionShown = true;
+                }
             }
         }
         if (isInOptions)
@@ -115,6 +122,23 @@ public class GameManager : MonoBehaviour
             {
                 HideOptionsMenu();
                 PauseGame();
+            }
+
+            return; // Block all other input
+        }
+        if (isInDataReset)
+        {
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                HideResetConfirmPanel();
+            }
+            return; // Block all other input
+        }
+        if (isInSwitchGamemode)
+        {
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                HideSwitchMode();
             }
             return; // Block all other input
         }
@@ -136,11 +160,20 @@ public class GameManager : MonoBehaviour
             return; // Block all other input
         }
 
-        if (waitingForAnyKey && Input.anyKeyDown && !Input.GetKeyDown(KeyCode.Escape))
+        if (isInScoreboard)
+        {
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                HideScoreboard();
+            }
+            return; // Block all other input
+        }
+
+        if (waitingForAnyKey && !board.enabled && Input.anyKeyDown && !Input.GetKeyDown(KeyCode.Escape))
         {
             waitingForAnyKey = false;
             pressAnyKeyText.gameObject.SetActive(false);
-            OnStartGamePressed(); // Start the game
+            OnStartGamePressed();
             return;
         }
 
@@ -191,8 +224,6 @@ public class GameManager : MonoBehaviour
         nextTileBox.SetActive(false);
         helpButton.SetActive(false);
         scene.helpMenu.gameObject.SetActive(false);
-        // EventSystem.current.SetSelectedGameObject(null);
-        // EventSystem.current.SetSelectedGameObject(soundToggleButton.gameObject);
         board.allowInput = false;
         optionsMenu.alpha = 1f;
         optionsMenu.interactable = true;
@@ -232,15 +263,13 @@ public class GameManager : MonoBehaviour
 
         menuButton.SetActive(false);
         undoButton.SetActive(false);
-        restartButton.SetActive(true);
+        restartButton.SetActive(false);
         optionButton.SetActive(true);
         ScoreBox.SetActive(false);
         nextTileBox.SetActive(false);
         helpButton.SetActive(true);
         board.allowInput = false;
-
-        // EventSystem.current.SetSelectedGameObject(null); // Clear previous selection
-        // EventSystem.current.SetSelectedGameObject(resumeButton.gameObject); // Set new
+        suggestionText.gameObject.SetActive(false);
 
         pauseMenu.alpha = 1f;
         pauseMenu.interactable = true;
@@ -271,6 +300,9 @@ public class GameManager : MonoBehaviour
         helpButton.SetActive(true);
         board.allowInput = true;
         gameModeNoticeText.gameObject.SetActive(false);
+        suggestionText.gameObject.SetActive(true);
+        confirmResetPanel.gameObject.SetActive(false);
+        switchModePanel.gameObject.SetActive(false);
 
         HidePauseMenu();
         HideOptionsMenu();
@@ -285,14 +317,19 @@ public class GameManager : MonoBehaviour
             StopCoroutine(blinkCoroutine);
         }
 
+        scoreboardScene.gameObject.SetActive(false);
         pressAnyKeyText.gameObject.SetActive(false);
         mainMenu.alpha = 0f;
         mainMenu.interactable = false;
         mainMenu.blocksRaycasts = false;
 
+        menuButton.SetActive(true);
+        restartButton.SetActive(true);
+        undoButton.SetActive(true);
         board.enabled = true; // Disable input while on main menu
         board.allowInput = true;
         nextTileBox.SetActive(true);
+
         if (board.GetTileCount()==0)
         {
             NewGame();
@@ -310,7 +347,10 @@ public class GameManager : MonoBehaviour
         isInOptions = false;
         //waitingForAnyKey = false;
         isInScoreboard = false;
-
+        restartButton.SetActive(true);
+        clearJson();
+        isGameOver = false;
+        scoreboardScene.gameObject.SetActive(false);
         Time.timeScale = 1f;
         // Restart the actual game
         NewGame();
@@ -319,6 +359,8 @@ public class GameManager : MonoBehaviour
     // Start a new game session
     public void NewGame()
     {
+        board.totalMoves = 0;
+        matchStartTime = Time.realtimeSinceStartup;
         SpecialTileMode = pendingSpecialTileMode;
         SetScore(0); // Reset score
         hiscoreText.text = LoadHiscore().ToString();
@@ -339,11 +381,15 @@ public class GameManager : MonoBehaviour
         undoButton.SetActive(true);          // Enable board input
         ScoreBox.SetActive(true);
         nextTileBox.SetActive(true);
+        suggestionText.gameObject.SetActive(true);
+        isGameOver = false;
 
         PrepareNextTile(); // Set up the first tile to be dropped
     }
     public void NewGameWithSave()
     {
+        board.totalMoves = 0;
+        matchStartTime = Time.realtimeSinceStartup;
         SpecialTileMode = pendingSpecialTileMode;
         SetScore(0); // Reset score
         hiscoreText.text = LoadHiscore().ToString();
@@ -365,7 +411,6 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning("Saved JSON is invalid or empty. Starting new game...");
             NewGame(); // Fall back to clean game logic
             return;    // Exit early so we don’t run PrepareNextTile() twice
         }
@@ -374,8 +419,11 @@ public class GameManager : MonoBehaviour
         board.allowInput = true;
         menuButton.SetActive(true);
         undoButton.SetActive(true);
+        restartButton.SetActive(true);
         ScoreBox.SetActive(true);
         nextTileBox.SetActive(true);
+        suggestionText.gameObject.SetActive(true);
+        isGameOver = false;
 
         PrepareNextTile(); // Ready next tile for gameplay
     }
@@ -384,8 +432,11 @@ public class GameManager : MonoBehaviour
     // Trigger game over sequence
     public void GameOver()
     {
-        // EventSystem.current.SetSelectedGameObject(null); // Clear previous selection
-        // EventSystem.current.SetSelectedGameObject(restartButtonGameOver.gameObject); // Set new
+        
+        isGameOver = true;
+        matchEndTime = Time.realtimeSinceStartup;
+        float duration = matchEndTime - matchStartTime;
+        ShowGameOverStats(score, board.totalMoves, duration);
         gameOverScene.gameObject.SetActive(true);
         board.enabled = false;
         gameOverScene.interactable = true;
@@ -393,25 +444,45 @@ public class GameManager : MonoBehaviour
 
         menuButton.SetActive(false);
         undoButton.SetActive(false);
+        restartButton.SetActive(false);
         ScoreBox.SetActive(false);
         nextTileBox.SetActive(false);
+        suggestionText.gameObject.SetActive(false);
 
         if (DatabaseManager.Instance != null)
         {
             DatabaseManager.Instance.SaveScore(score);
+            DatabaseManager.Instance.ClearSavedGame();
         }
-        DatabaseManager.Instance.ClearSavedGame();
+        clearJson();
         StartCoroutine(Fade(gameOverScene, 1f, 1f)); // Smooth fade-in
     }
+    private void ShowGameOverStats(int score, int moves, float duration)
+    {
+        string formattedTime = FormatTime(duration);
+
+        string stats = $"Score: {score}\n" +
+                       $"Moves: {moves}\n" +
+                       $"Time: {formattedTime}";
+
+        lastMatchStatsText.text = stats;
+    }
+    private string FormatTime(float seconds)
+    {
+        int minutes = Mathf.FloorToInt(seconds / 60f);
+        int secs = Mathf.FloorToInt(seconds % 60f);
+        return $"{minutes:D2}:{secs:D2}";
+    }
+
 
     private void SuggestNextMove()
     {
-        string[] directions = { "Up", "Down", "Left", "Right" };
+        string[] directions = { "UP", "DOWN", "LEFT", "RIGHT" };
         int randomIndex = Random.Range(0, directions.Length);
 
-        suggestionText.text = "Try moving: " + directions[randomIndex];
+        suggestionText.text = "TRY MOVING " + directions[randomIndex];
         suggestionText.gameObject.SetActive(true);
-        //blinkCoroutine  = StartCoroutine(BlinkText(suggestionText));
+        
     }
 
     private void HideSuggestion()
@@ -479,10 +550,10 @@ public class GameManager : MonoBehaviour
     }
     public void HideScoreboard()
     {
-        scoreboardScene.gameObject.SetActive(true);
         scoreboardScene.alpha = 0f;
         scoreboardScene.interactable = false;
         scoreboardScene.blocksRaycasts = false;
+        scoreboardScene.gameObject.SetActive(false);
     }
     public void ToggleScoreboard()
     {
@@ -667,20 +738,21 @@ public class GameManager : MonoBehaviour
 
     public void ShowResetConfirmPanel()
     {
+        
+        confirmResetPanel.gameObject.SetActive(true);
         HideOptionsMenu();
-        // EventSystem.current.SetSelectedGameObject(null); // Clear previous selection
-        // EventSystem.current.SetSelectedGameObject(NObtn.gameObject); // Set new
-        resetConfirmPanel.alpha = 1f;
-        resetConfirmPanel.interactable = true;
-        resetConfirmPanel.blocksRaycasts = true;
+        confirmResetPanel.alpha = 1f;
+        confirmResetPanel.interactable = true;
+        confirmResetPanel.blocksRaycasts = true;
     }
 
     public void HideResetConfirmPanel()
     {
+        confirmResetPanel.gameObject.SetActive(false);
         ShowOptionsMenu();
-        resetConfirmPanel.alpha = 0f;
-        resetConfirmPanel.interactable = false;
-        resetConfirmPanel.blocksRaycasts = false;
+        confirmResetPanel.alpha = 0f;
+        confirmResetPanel.interactable = false;
+        confirmResetPanel.blocksRaycasts = false;
     }
 
     public void ConfirmReset()
@@ -699,6 +771,44 @@ public class GameManager : MonoBehaviour
         HideResetConfirmPanel();
     }
 
+    public void ShowSwitchMode()
+    {
+        switchModePanel.gameObject.SetActive(true);
+        HideOptionsMenu();
+        switchModePanel.alpha = 1f;
+        switchModePanel.interactable = true;
+        switchModePanel.blocksRaycasts = true;
+    }
+
+    public void HideSwitchMode()
+    {
+        switchModePanel.gameObject.SetActive(false);
+        ShowOptionsMenu();
+        switchModePanel.alpha = 0f;
+        switchModePanel.interactable = false;
+        switchModePanel.blocksRaycasts = false;
+    }
+
+    public void ConfirmSwitchMode()
+    {
+        switchModePanel.gameObject.SetActive(false);
+        ToggleGameMode();
+        RestartGame();
+        HideOptionsMenu();
+        HidePauseMenu();
+        
+    }
+
+    public void CancelSwitchMode()
+    {
+        HideSwitchMode();
+    }
+
+    public void clearJson()
+    {
+        lastBoardJson = "";
+        lastScore = 0;
+    }
 
     public void OnApplicationQuit()
     {

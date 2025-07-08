@@ -16,7 +16,9 @@ public class TileBoard : MonoBehaviour
     private bool forceNextTile = false;
     public bool allowInput = true;
     public bool isAnimating = false;
+    public int totalMoves = 0;
     public int GetTileCount()
+    
     {
         return tiles.Count;
     }
@@ -342,6 +344,7 @@ public class TileBoard : MonoBehaviour
         }
         if(changed)
         {
+            totalMoves++;
             StartCoroutine(WaitForChange());
             MoveSound.Play();
         }
